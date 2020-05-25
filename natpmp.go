@@ -102,18 +102,17 @@ func (n *natpmpNAT) AddPortMapping(protocol string, internalPort int, descriptio
 	timeoutInSeconds := int(timeout / time.Second)
 
 	if n.port == internalPort && n.extport > 0 {
-		_, err = n.c.AddPortMapping(protocol, internalPort, n.extport, timeoutInSeconds)
+		_, err = n.c.AddPortMapping(protocol, n.port, n.extport, timeoutInSeconds)
 		if err == nil {
 			return n.extport, nil
 		}
 	}
-
+	n.port = internalPort
 	for i := 0; i < 3; i++ {
 		externalPort := randomPort()
-		_, err = n.c.AddPortMapping(protocol, internalPort, externalPort, timeoutInSeconds)
+		_, err = n.c.AddPortMapping(protocol, n.port, externalPort, timeoutInSeconds)
 		if err == nil {
 			n.extport = externalPort
-			n.port = internalPort
 			return externalPort, nil
 		}
 	}
