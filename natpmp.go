@@ -28,7 +28,7 @@ func discoverNATPMP(ctx context.Context) <-chan NAT {
 		select {
 		case client, ok := <-discoverNATPMPWithAddr(ip):
 			if ok {
-				res <- &natpmpNAT{client, ip, make(map[int]int)}
+				res <- &natpmpNAT{c: client, gateway: ip}
 			}
 		case <-ctx.Done():
 		}
@@ -50,10 +50,13 @@ func discoverNATPMPWithAddr(ip net.IP) <-chan *natpmp.Client {
 	return res
 }
 
+type Port map[int]bool
+
 type natpmpNAT struct {
 	c       *natpmp.Client
 	gateway net.IP
-	ports   map[int]int
+	extport int
+	port    int
 }
 
 func (n *natpmpNAT) GetDeviceAddress() (addr net.IP, err error) {
@@ -95,18 +98,13 @@ func (n *natpmpNAT) GetExternalAddress() (addr net.IP, err error) {
 	return net.IPv4(d[0], d[1], d[2], d[3]), nil
 }
 
-func (n *natpmpNAT) AddPortMapping(protocol string, internalPort int, description string, timeout time.Duration) (int, error) {
-	var (
-		err error
-	)
-
+func (n *natpmpNAT) AddPortMapping(protocol string, internalPort int, description string, timeout time.Duration) (port int, err error) {
 	timeoutInSeconds := int(timeout / time.Second)
 
-	if externalPort := n.ports[internalPort]; externalPort > 0 {
-		_, err = n.c.AddPortMapping(protocol, internalPort, externalPort, timeoutInSeconds)
+	if n.port == internalPort && n.extport > 0 {
+		_, err = n.c.AddPortMapping(protocol, internalPort, n.extport, timeoutInSeconds)
 		if err == nil {
-			n.ports[internalPort] = externalPort
-			return externalPort, nil
+			return n.extport, nil
 		}
 	}
 
@@ -114,7 +112,8 @@ func (n *natpmpNAT) AddPortMapping(protocol string, internalPort int, descriptio
 		externalPort := randomPort()
 		_, err = n.c.AddPortMapping(protocol, internalPort, externalPort, timeoutInSeconds)
 		if err == nil {
-			n.ports[internalPort] = externalPort
+			n.extport = externalPort
+			n.port = internalPort
 			return externalPort, nil
 		}
 	}
@@ -123,7 +122,7 @@ func (n *natpmpNAT) AddPortMapping(protocol string, internalPort int, descriptio
 }
 
 func (n *natpmpNAT) DeletePortMapping(protocol string, internalPort int) (err error) {
-	delete(n.ports, internalPort)
+	_, err = n.c.AddPortMapping(protocol, internalPort, n.extport, 0)
 	return nil
 }
 
